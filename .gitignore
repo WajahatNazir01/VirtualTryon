@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Downloaded model weights (rembg/mediapipe cache elsewhere, but just in case)
+*.onnx
+*.pb
+*.tflite
+
+# Test data (garment/sample images you paste in during development)
+data/garments/*
+data/samples/*
+!data/garments/.gitkeep
+!data/samples/.gitkeep
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
