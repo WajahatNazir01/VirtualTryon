@@ -18,7 +18,7 @@ from warp import garment_anchor_points, body_target_points, warp_garment, compos
 mp_pose = mp.solutions.pose
 
 
-def main(garment_path: str):
+def main(garment_path: str, garment_type: str = "sleeved"):
     garment_rgba = cv2.imread(garment_path, cv2.IMREAD_UNCHANGED)
     if garment_rgba is None:
         print(f"Could not load garment image at {garment_path}")
@@ -27,7 +27,7 @@ def main(garment_path: str):
         print("Garment image has no alpha channel — run garment_segment.py on it first.")
         sys.exit(1)
 
-    src_pts = garment_anchor_points(garment_rgba)
+    src_pts = garment_anchor_points(garment_rgba, garment_type=garment_type)
 
     cap = cv2.VideoCapture(0)
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -53,9 +53,10 @@ def main(garment_path: str):
 
 
 if __name__ == "__main__":
-    # Usage: python main.py path/to/shirt_cutout.png
-    if len(sys.argv) != 2:
-        print("Usage: python main.py <garment_rgba_png>")
+    # Usage: python main.py <garment_rgba_png> [sleeved|sleeveless]
+    if len(sys.argv) not in (2, 3):
+        print("Usage: python main.py <garment_rgba_png> [sleeved|sleeveless]")
         sys.exit(1)
 
-    main(sys.argv[1])
+    garment_type = sys.argv[2] if len(sys.argv) == 3 else "sleeved"
+    main(sys.argv[1], garment_type)
