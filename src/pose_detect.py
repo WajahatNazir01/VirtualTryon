@@ -16,10 +16,14 @@ LANDMARK_IDS = {
     "right_ear": 8,
     "left_shoulder": 11,
     "right_shoulder": 12,
+    "left_elbow": 13,
+    "right_elbow": 14,
     "left_hip": 23,
     "right_hip": 24,
     "left_knee": 25,
     "right_knee": 26,
+    "left_ankle": 27,
+    "right_ankle": 28,
 }
 
 

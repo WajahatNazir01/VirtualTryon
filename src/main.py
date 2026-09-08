@@ -1,35 +1,76 @@
 """
 main.py
-Ties everything together: loads a pre-segmented garment PNG (RGBA),
-opens the webcam, detects pose each frame, warps the garment onto
-the detected torso, and displays the live composited result.
+End-to-end pipeline: takes a raw garment photo, segments it, classifies
+its category (CLIP), then runs the live webcam overlay using the
+landmark set and anchor logic that matches that category automatically.
 
-Run garment_segment.py once beforehand to produce the transparent
-garment PNG from your pasted clothing image.
+Usage:
+    python main.py ../data/garments/shirt.jpg
+    python main.py ../data/garments/shirt.jpg --category upper_body_sleeved   (skip classifier)
 """
 
 import sys
+import os
+import argparse
 import cv2
 import mediapipe as mp
 
+from garment_segment import remove_background
+from category_classifier import classify_garment, CATEGORIES
 from pose_detect import get_pose_landmarks
-from warp import garment_anchor_points, body_target_points, warp_garment, composite
+from warp import (
+    garment_anchor_points, body_target_points, warp_garment, composite,
+    garment_landmarks_upper_body, body_landmarks_upper_body, REQUIRED_LANDMARKS,
+)
+from mesh_warp import warp_garment_mesh
 
 mp_pose = mp.solutions.pose
 
+MESH_CATEGORIES = {"upper_body_sleeved", "upper_body_sleeveless"}
 
-def main(garment_path: str, garment_type: str = "sleeved"):
-    garment_rgba = cv2.imread(garment_path, cv2.IMREAD_UNCHANGED)
-    if garment_rgba is None:
-        print(f"Could not load garment image at {garment_path}")
-        sys.exit(1)
-    if garment_rgba.shape[2] != 4:
-        print("Garment image has no alpha channel — run garment_segment.py on it first.")
+
+def prepare_garment(photo_path: str):
+    """Segments the background and returns the path to the cutout PNG."""
+    base, _ = os.path.splitext(photo_path)
+    cutout_path = base + "_cutout.png"
+    remove_background(photo_path, cutout_path)
+    return cutout_path
+
+
+def main(photo_path: str, category_override: str = None):
+    cutout_path = prepare_garment(photo_path)
+    print(f"Garment cutout saved to: {cutout_path}")
+
+    if category_override:
+        category = category_override
+        print(f"Using specified category: {category}")
+    else:
+        print("Classifying garment category...")
+        category = classify_garment(photo_path)
+        print(f"Detected category: {category}")
+
+    garment_rgba = cv2.imread(cutout_path, cv2.IMREAD_UNCHANGED)
+    if garment_rgba is None or garment_rgba.shape[2] != 4:
+        print("Failed to load a valid RGBA garment cutout.")
         sys.exit(1)
 
-    src_pts = garment_anchor_points(garment_rgba, garment_type=garment_type)
+    use_mesh = category in MESH_CATEGORIES
+    sleeveless = category == "upper_body_sleeveless"
+
+    if use_mesh:
+        garment_landmarks = garment_landmarks_upper_body(garment_rgba, sleeveless=sleeveless)
+        print(f"Garment landmarks: {garment_landmarks}")
+        required = {"left_shoulder", "right_shoulder", "left_elbow", "right_elbow"}
+    else:
+        src_pts = garment_anchor_points(garment_rgba, category=category)
+        required = set(REQUIRED_LANDMARKS.get(category, []))
 
     cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("ERROR: Could not open webcam (index 0).")
+        sys.exit(1)
+
+    printed_body_landmarks = False
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
         while cap.isOpened():
             ok, frame = cap.read()
@@ -39,12 +80,19 @@ def main(garment_path: str, garment_type: str = "sleeved"):
             frame = cv2.flip(frame, 1)
             points = get_pose_landmarks(frame, pose)
 
-            if points:
-                dst_pts = body_target_points(points)
-                warped = warp_garment(garment_rgba, src_pts, dst_pts, frame.shape)
+            if points and required.issubset(points.keys()):
+                if use_mesh:
+                    body_landmarks = body_landmarks_upper_body(points)
+                    if not printed_body_landmarks:
+                        print(f"Body landmarks: {body_landmarks}")
+                        printed_body_landmarks = True
+                    warped = warp_garment_mesh(garment_rgba, garment_landmarks, body_landmarks, frame.shape)
+                else:
+                    dst_pts = body_target_points(points, category=category)
+                    warped = warp_garment(garment_rgba, src_pts, dst_pts, frame.shape)
                 frame = composite(frame, warped)
 
-            cv2.imshow("Virtual Try-On MVP", frame)
+            cv2.imshow(f"Virtual Try-On MVP [{category}]", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
@@ -53,10 +101,13 @@ def main(garment_path: str, garment_type: str = "sleeved"):
 
 
 if __name__ == "__main__":
-    # Usage: python main.py <garment_rgba_png> [sleeved|sleeveless]
-    if len(sys.argv) not in (2, 3):
-        print("Usage: python main.py <garment_rgba_png> [sleeved|sleeveless]")
-        sys.exit(1)
-
-    garment_type = sys.argv[2] if len(sys.argv) == 3 else "sleeved"
-    main(sys.argv[1], garment_type)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("photo", help="Path to the original garment photo (not the cutout)")
+    parser.add_argument(
+        "--category",
+        choices=list(CATEGORIES.keys()),
+        default=None,
+        help="Skip the classifier and force a category",
+    )
+    args = parser.parse_args()
+    main(args.photo, args.category)
