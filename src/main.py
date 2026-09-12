@@ -11,6 +11,7 @@ Usage:
 
 import sys
 import os
+import json
 import argparse
 import cv2
 import mediapipe as mp
@@ -58,7 +59,16 @@ def main(photo_path: str, category_override: str = None):
     sleeveless = category == "upper_body_sleeveless"
 
     if use_mesh:
-        garment_landmarks = garment_landmarks_upper_body(garment_rgba, sleeveless=sleeveless)
+        landmarks_path = os.path.splitext(cutout_path)[0] + "_landmarks.json"
+        if os.path.exists(landmarks_path):
+            with open(landmarks_path) as f:
+                raw = json.load(f)
+            garment_landmarks = {k: tuple(v) for k, v in raw.items()}
+            print(f"Using manually-marked landmarks from: {landmarks_path}")
+        else:
+            print(f"No manual landmarks found at {landmarks_path} -- falling back to auto-detection.")
+            print(f"For more reliable results, run: python mark_garment_points.py {cutout_path}")
+            garment_landmarks = garment_landmarks_upper_body(garment_rgba, sleeveless=sleeveless)
         print(f"Garment landmarks: {garment_landmarks}")
         required = {"left_shoulder", "right_shoulder", "left_elbow", "right_elbow"}
     else:
