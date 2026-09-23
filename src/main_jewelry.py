@@ -128,5 +128,6 @@ if __name__ == "__main__":
     if not any([args.earring, args.ring, args.necklace, args.bracelet]):
         print("Provide at least one of --earring, --ring, --necklace, --bracelet")
         sys.exit(1)
+        
 
     main(args.earring, args.ring, args.necklace, args.bracelet)
